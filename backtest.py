@@ -65,7 +65,8 @@ def backtest_symbol(symbol, total):
             hi_total += 1
             hi_correct += ok
 
-    span_h = n * 5 / 60
+    tf_min = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240}
+    span_h = n * tf_min.get(config.INTERVAL, 5) / 60
     print(f"\n=== {symbol} ===")
     print(f"Candles tested : {n}  (~{span_h:.0f} h / {span_h/24:.1f} days)")
     print(f"Directional predictions: {total_p}  (neutral skipped: {neutral})")

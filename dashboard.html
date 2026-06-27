@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Live Chart + Signal Dashboard — BTC / ETH</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root{
+    --bg:#0b0e14;--panel:#141923;--panel2:#1c2230;--line:#262e3d;
+    --txt:#e6e9ef;--muted:#8b97ac;--up:#16c784;--down:#ea3943;--accent:#f0b90b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI',system-ui,Arial,sans-serif;
+    background:radial-gradient(1200px 600px at 70% -10%,#161d2b,var(--bg));color:var(--txt);
+    min-height:100vh;padding:18px}
+  .top{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:14px}
+  h1{font-size:18px;margin:0}
+  .seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .seg button{background:transparent;color:var(--muted);border:0;padding:8px 14px;cursor:pointer;font-size:13px}
+  .seg button.active{background:var(--accent);color:#111;font-weight:700}
+  .price{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums}
+  .chg{font-size:14px;font-weight:600}
+  .grid{display:grid;grid-template-columns:1fr 320px;gap:16px}
+  @media(max-width:880px){.grid{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
+    border-radius:14px;padding:16px}
+  #chart{height:460px;width:100%}
+  .dir{font-size:34px;font-weight:800;letter-spacing:1px}
+  .dir.up{color:var(--up)}.dir.down{color:var(--down)}.dir.wait{color:var(--muted);font-size:24px}
+  .conf{color:var(--muted);font-size:14px;margin-left:8px}
+  .bar{height:8px;background:#0d1119;border-radius:6px;overflow:hidden;margin:12px 0}
+  .bar>i{display:block;height:100%;transition:width .5s}
+  .reasons span{display:inline-block;background:#0d1320;border:1px solid var(--line);border-radius:6px;
+    padding:2px 8px;margin:3px 4px 0 0;font-size:12px;color:var(--muted)}
+  .reasons span.b{color:var(--up);border-color:#1c4a3a}.reasons span.s{color:var(--down);border-color:#4a2026}
+  h3{font-size:13px;margin:18px 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .lvl{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--line);
+    font-variant-numeric:tabular-nums}
+  .lvl b{font-weight:700}.lvl .res{color:var(--down)}.lvl .sup{color:var(--up)}
+  .lvl .dist{color:var(--muted);font-size:12px}
+  .status{font-size:12px;color:var(--muted);margin-top:10px}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--up);margin-right:5px;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .legend{font-size:11px;color:var(--muted);margin-top:6px}
+  .legend i{display:inline-block;width:18px;height:3px;vertical-align:middle;margin:0 4px 0 10px}
+  .disc{font-size:11px;color:#6b7689;margin-top:16px;max-width:900px;line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <h1>Live Chart + Signal Dashboard</h1>
+      <div class="status"><span class="dot"></span><span id="status">starting…</span></div>
+    </div>
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <div class="seg" id="symSeg">
+        <button data-sym="BTCUSDT" class="active">BTC</button>
+        <button data-sym="ETHUSDT">ETH</button>
+      </div>
+      <div class="seg" id="tfSeg">
+        <button data-tf="5m" class="active">5m</button>
+        <button data-tf="15m">15m</button>
+        <button data-tf="1h">1h</button>
+      </div>
+      <div style="text-align:right">
+        <div class="price" id="px">—</div>
+        <div class="chg" id="chg">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div id="chart"></div>
+      <div class="legend">
+        <i style="background:#2962ff"></i>EMA 9
+        <i style="background:#f0b90b"></i>EMA 21
+        <i style="background:var(--down);height:1px;border-top:1px dashed var(--down)"></i>Resistance
+        <i style="background:var(--up);height:1px;border-top:1px dashed var(--up)"></i>Support
+        &nbsp;·&nbsp; next candle in <b id="cd">--:--</b>
+      </div>
+    </div>
+
+    <div class="card">
+      <div><span class="dir wait" id="dir">WAIT</span><span class="conf" id="cf"></span></div>
+      <div class="bar"><i id="barFill" style="width:0%"></i></div>
+      <div class="reasons" id="reasons"></div>
+
+      <h3>Resistance (above)</h3>
+      <div id="resList"></div>
+      <h3>Support (below)</h3>
+      <div id="supList"></div>
+      <div class="status" id="srNote"></div>
+    </div>
+  </div>
+
+  <div class="disc">
+    Live data from Binance public endpoint. EMA9/21 overlays + auto support/resistance from swing pivots.
+    Signal = weighted vote of EMA/MACD/RSI/Stochastic/ROC/volume. <b>5-min direction is mostly noise (~50–55% real
+    hit-rate); higher timeframes are less noisy. Educational tool, not financial advice.</b>
+  </div>
+
+<script>
+/* ===================== Indicators ===================== */
+function ema(v,p){const k=2/(p+1);let e=v[0];const o=[e];for(let i=1;i<v.length;i++){e=v[i]*k+e*(1-k);o.push(e);}return o;}
+function rsi(c,p=14){let g=0,l=0;for(let i=1;i<=p;i++){const d=c[i]-c[i-1];if(d>=0)g+=d;else l-=d;}let ag=g/p,al=l/p;const o=new Array(p).fill(50);for(let i=p+1;i<c.length;i++){const d=c[i]-c[i-1];ag=(ag*(p-1)+(d>0?d:0))/p;al=(al*(p-1)+(d<0?-d:0))/p;o.push(al===0?100:100-100/(1+ag/al));}return o;}
+function macd(c,f=12,s=26,sig=9){const ef=ema(c,f),es=ema(c,s);const line=c.map((_,i)=>ef[i]-es[i]);const signal=ema(line,sig);return{hist:line.map((v,i)=>v-signal[i])};}
+function stochastic(h,l,c,p=14){const o=[];for(let i=0;i<c.length;i++){if(i<p-1){o.push(50);continue;}let hh=-1e18,ll=1e18;for(let j=i-p+1;j<=i;j++){hh=Math.max(hh,h[j]);ll=Math.min(ll,l[j]);}o.push(hh===ll?50:100*(c[i]-ll)/(hh-ll));}return o;}
+function roc(c,n=5){const o=new Array(c.length).fill(0);for(let i=n;i<c.length;i++)o[i]=100*(c[i]-c[i-n])/c[i-n];return o;}
+const sma=(a,n,e)=>{let s=0;for(let i=e-n+1;i<=e;i++)s+=a[i];return s/n;};
+const clamp=x=>Math.max(-1,Math.min(1,x));
+
+function buildSignal(k){
+  const c=k.map(x=>x.c),h=k.map(x=>x.h),l=k.map(x=>x.l),v=k.map(x=>x.v),last=c.length-1;
+  const e9=ema(c,9),e21=ema(c,21),r=rsi(c,14),m=macd(c),st=stochastic(h,l,c,14),rc=roc(c,5);
+  const votes=[];const add=(lbl,val,w)=>votes.push({lbl,val:clamp(val),w});
+  add("EMA9/21 trend",Math.tanh((e9[last]-e21[last])/c[last]*1000),1.2);
+  add("EMA9 slope",Math.tanh((e9[last]-e9[last-1])/c[last]*2000),0.8);
+  add("MACD hist",Math.tanh(m.hist[last]/c[last]*1500),0.8);
+  const dh=m.hist[last]-m.hist[last-1];add("MACD momentum",Math.sign(dh)*Math.min(1,Math.abs(dh)/c[last]*3000),0.7);
+  const rn=r[r.length-1],rp=r[r.length-2];let rv;if(rn<32)rv=0.7;else if(rn>68)rv=-0.7;else rv=Math.tanh((rn-rp)/8)+(rn-50)/100;
+  add("RSI("+rn.toFixed(0)+")",rv,0.9);
+  const sn=st[last];add("Stoch",sn<20?0.6:sn>80?-0.6:(sn-50)/60,0.6);
+  add("ROC",Math.tanh(rc[last]/0.8),0.8);
+  const body=(c[last]-k[last].o)/c[last],vr=v[last]/sma(v,20,last);add("Vol/Body",Math.tanh(body*4000)*Math.min(1.3,vr)/1.3,0.7);
+  const micro=Math.sign((c[last]-c[last-1])+(c[last-1]-c[last-2])*0.6);add("Micro-structure",micro*0.8,0.5);
+  let sw=0,tw=0;votes.forEach(x=>{sw+=x.val*x.w;tw+=x.w;});
+  const score=sw/tw,dir=score>0.03?"UP":score<-0.03?"DOWN":"NEUTRAL";
+  return{dir,conf:Math.min(92,Math.round(50+Math.min(0.92,Math.abs(score))*46)),score,votes,rsi:rn,e9,e21};
+}
+
+/* ===================== Support / Resistance ===================== */
+function supportResistance(k, price){
+  // Pivot highs/lows over the window, then merge into levels by proximity.
+  const K=3, levels=[];
+  for(let i=K;i<k.length-K;i++){
+    let isHigh=true,isLow=true;
+    for(let j=i-K;j<=i+K;j++){
+      if(k[j].h>k[i].h)isHigh=false;
+      if(k[j].l<k[i].l)isLow=false;
+    }
+    if(isHigh)levels.push({p:k[i].h,t:"res"});
+    if(isLow)levels.push({p:k[i].l,t:"sup"});
+  }
+  // merge levels within 0.25% of each other, count touches
+  const tol=price*0.0025, merged=[];
+  levels.sort((a,b)=>a.p-b.p);
+  for(const lv of levels){
+    const m=merged.find(x=>Math.abs(x.p-lv.p)<tol);
+    if(m){m.p=(m.p*m.n+lv.p)/(m.n+1);m.n++;}
+    else merged.push({p:lv.p,n:1});
+  }
+  const res=merged.filter(x=>x.p>price).sort((a,b)=>a.p-b.p).slice(0,3);
+  const sup=merged.filter(x=>x.p<price).sort((a,b)=>b.p-a.p).slice(0,3);
+  return {res,sup};
+}
+
+/* ===================== Data ===================== */
+const BASE="https://data-api.binance.vision";
+async function getKlines(sym,tf,limit=300){
+  const r=await fetch(`${BASE}/api/v3/klines?symbol=${sym}&interval=${tf}&limit=${limit}`,{cache:"no-store"});
+  const raw=await r.json();
+  return raw.map(c=>({time:Math.floor(c[0]/1000),openTime:c[0],o:+c[1],h:+c[2],l:+c[3],c:+c[4],v:+c[5]}));
+}
+async function getTicker(sym){
+  const r=await fetch(`${BASE}/api/v3/ticker/24hr?symbol=${sym}`,{cache:"no-store"});
+  return r.json();
+}
+
+/* ===================== Chart ===================== */
+let chart,candle,e9line,e21line,priceLines=[];
+function initChart(){
+  chart=LightweightCharts.createChart(document.getElementById("chart"),{
+    layout:{background:{color:"transparent"},textColor:"#8b97ac"},
+    grid:{vertLines:{color:"#1b2230"},horzLines:{color:"#1b2230"}},
+    timeScale:{timeVisible:true,secondsVisible:false,borderColor:"#262e3d"},
+    rightPriceScale:{borderColor:"#262e3d"},
+    crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
+  });
+  candle=chart.addCandlestickSeries({upColor:"#16c784",downColor:"#ea3943",
+    borderUpColor:"#16c784",borderDownColor:"#ea3943",wickUpColor:"#16c784",wickDownColor:"#ea3943"});
+  e9line=chart.addLineSeries({color:"#2962ff",lineWidth:2,priceLineVisible:false,lastValueVisible:false});
+  e21line=chart.addLineSeries({color:"#f0b90b",lineWidth:2,priceLineVisible:false,lastValueVisible:false});
+  new ResizeObserver(()=>chart.applyOptions({width:document.getElementById("chart").clientWidth})).observe(document.getElementById("chart"));
+  chart.applyOptions({width:document.getElementById("chart").clientWidth,height:460});
+}
+
+/* ===================== State + render ===================== */
+let SYM="BTCUSDT",TF="5m",lastInterval=300000;
+const TF_MS={ "5m":300000,"15m":900000,"1h":3600000 };
+const fmt=p=>p>=1000?p.toLocaleString(undefined,{maximumFractionDigits:1}):p.toLocaleString(undefined,{maximumFractionDigits:2});
+
+function drawSR(sr){
+  priceLines.forEach(pl=>candle.removePriceLine(pl));priceLines=[];
+  const mk=(p,color,title)=>priceLines.push(candle.createPriceLine({price:p,color,lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title}));
+  sr.res.forEach((x,i)=>mk(x.p,"#ea3943","R"+(i+1)));
+  sr.sup.forEach((x,i)=>mk(x.p,"#16c784","S"+(i+1)));
+  const row=(x,cls,price)=>`<div class="lvl"><span class="${cls}">$${fmt(x.p)} <b>×${x.n}</b></span>
+    <span class="dist">${((x.p-price)/price*100).toFixed(2)}%</span></div>`;
+  document.getElementById("resList").innerHTML=sr.res.map(x=>row(x,"res",window._px)).join("")||'<div class="lvl"><span class="dist">none nearby</span></div>';
+  document.getElementById("supList").innerHTML=sr.sup.map(x=>row(x,"sup",window._px)).join("")||'<div class="lvl"><span class="dist">none nearby</span></div>';
+}
+
+async function fullRefresh(){
+  try{
+    const k=await getKlines(SYM,TF);
+    lastInterval=TF_MS[TF];
+    candle.setData(k.map(c=>({time:c.time,open:c.o,high:c.h,low:c.l,close:c.c})));
+    const closed=k.slice(0,-1);
+    const sig=buildSignal(closed);
+    // EMA overlays aligned to closed candles
+    e9line.setData(closed.map((c,i)=>({time:c.time,value:sig.e9[i]})));
+    e21line.setData(closed.map((c,i)=>({time:c.time,value:sig.e21[i]})));
+    window._px=k[k.length-1].c;
+    // signal panel
+    const dir=document.getElementById("dir");
+    dir.textContent=sig.dir;dir.className="dir "+(sig.dir==="UP"?"up":sig.dir==="DOWN"?"down":"wait");
+    document.getElementById("cf").textContent=sig.dir==="NEUTRAL"?"no clear edge":sig.conf+"% confidence";
+    const bf=document.getElementById("barFill");bf.style.width=Math.abs(sig.score)*100+"%";
+    bf.style.background=sig.dir==="UP"?"var(--up)":sig.dir==="DOWN"?"var(--down)":"var(--muted)";
+    document.getElementById("reasons").innerHTML=sig.votes.slice().sort((a,b)=>Math.abs(b.val*b.w)-Math.abs(a.val*a.w))
+      .map(v=>`<span class="${v.val>0.05?'b':v.val<-0.05?'s':''}">${v.lbl} ${v.val>0?'▲':v.val<0?'▼':'·'}</span>`).join("");
+    drawSR(supportResistance(closed,window._px));
+    document.getElementById("srNote").textContent="×N = times the level was tested. Updated "+new Date().toLocaleTimeString();
+    setStatus("live · "+SYM.replace("USDT","/USDT")+" · "+TF);
+  }catch(e){ setStatus("⚠ fetch failed: "+e.message); }
+}
+async function tick(){
+  try{
+    const t=await getTicker(SYM);
+    const p=+t.lastPrice,ch=+t.priceChangePercent;
+    window._px=p;
+    document.getElementById("px").textContent="$"+fmt(p);
+    const chg=document.getElementById("chg");
+    chg.textContent=(ch>=0?"▲ +":"▼ ")+ch.toFixed(2)+"% (24h)";
+    chg.style.color=ch>=0?"var(--up)":"var(--down)";
+  }catch(e){}
+}
+function setStatus(t){document.getElementById("status").textContent=t;}
+
+function tickCountdown(){
+  const ms=lastInterval-(Date.now()%lastInterval);
+  const m=Math.floor(ms/60000),s=Math.floor((ms%60000)/1000);
+  document.getElementById("cd").textContent=String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
+}
+
+/* ===================== Wire up ===================== */
+document.getElementById("symSeg").onclick=e=>{
+  if(!e.target.dataset.sym)return;
+  [...e.currentTarget.children].forEach(b=>b.classList.remove("active"));
+  e.target.classList.add("active");SYM=e.target.dataset.sym;fullRefresh();tick();
+};
+document.getElementById("tfSeg").onclick=e=>{
+  if(!e.target.dataset.tf)return;
+  [...e.currentTarget.children].forEach(b=>b.classList.remove("active"));
+  e.target.classList.add("active");TF=e.target.dataset.tf;fullRefresh();
+};
+
+initChart();
+fullRefresh();tick();
+setInterval(tick,3000);          // live price every 3s
+setInterval(fullRefresh,9000);   // candles + signal + S/R every 9s
+setInterval(tickCountdown,1000);
+</script>
+</body>
+</html>

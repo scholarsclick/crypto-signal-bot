@@ -26,7 +26,8 @@ from data import fetch_klines
 from indicators import build_signal
 from alerts import broadcast
 
-INTERVAL_MS = 5 * 60 * 1000
+_TF_MIN = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240}
+INTERVAL_MS = _TF_MIN.get(config.INTERVAL, 5) * 60 * 1000
 
 # In-memory record of the last prediction per symbol, so we can score it
 # once its candle closes. Persisted nowhere but the CSV log.

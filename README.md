@@ -14,6 +14,15 @@ live accuracy. Same strategy is also available as a one-file browser app
 | `data.py`       | Binance public data fetch (no API key). |
 | `alerts.py`     | Telegram + Discord delivery. |
 | `config.py`     | **Edit this** — symbols, alert tokens, thresholds. |
+| `dashboard.html`| Live candlestick chart + EMA overlays + auto support/resistance + signal, with a 5m/15m/1h switch. Just double-click. |
+
+## Timeframes (5m / 15m / 1h)
+The strategy runs on any timeframe. Set it three ways:
+- **Browser:** `dashboard.html` has a 5m/15m/1h toggle.
+- **Local:** `set INTERVAL=15m` then `python run_once.py` (or `backtest.py`).
+- **Cloud:** three workflows ship in `.github/workflows/` — `signals.yml` (5m),
+  `signals-15m.yml` (15m), `signals-1h.yml` (1h) — each on its own schedule.
+Higher timeframes have a better signal-to-noise ratio than 5m.
 
 ## Quick start
 1. **Backtest first** (no setup needed — see if it's worth running):

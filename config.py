@@ -12,7 +12,7 @@ import os
 
 # ----- Markets to trade signals on -----
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
-INTERVAL = "5m"          # candle size
+INTERVAL = os.getenv("INTERVAL", "5m")   # candle size: 5m / 15m / 1h (env overrides)
 HISTORY_LIMIT = 200      # how many candles to pull for indicator math
 
 # ----- Telegram alerts (optional) -----
