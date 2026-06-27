@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>5-Min Candle Signal Bot — BTC / ETH</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#141923; --panel2:#1c2230; --line:#262e3d;
+    --txt:#e6e9ef; --muted:#8b97ac; --up:#16c784; --down:#ea3943;
+    --accent:#f0b90b; --shadow:0 8px 30px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;font-family:'Segoe UI',system-ui,Arial,sans-serif;
+    background:radial-gradient(1200px 600px at 70% -10%,#161d2b,var(--bg));
+    color:var(--txt);min-height:100vh;padding:24px;
+  }
+  h1{font-size:20px;margin:0 0 2px;font-weight:700;letter-spacing:.3px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:18px}
+  .topbar{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .clock{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 16px;font-size:14px}
+  .clock b{color:var(--accent);font-variant-numeric:tabular-nums}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:18px;margin-bottom:22px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
+    border-radius:16px;padding:20px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .card .sym{display:flex;align-items:center;justify-content:space-between}
+  .sym h2{margin:0;font-size:18px}
+  .price{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .signal{display:flex;align-items:baseline;gap:12px;margin:16px 0 6px}
+  .dir{font-size:38px;font-weight:800;letter-spacing:1px}
+  .dir.up{color:var(--up)} .dir.down{color:var(--down)} .dir.wait{color:var(--muted);font-size:26px}
+  .conf{font-size:15px;color:var(--muted)}
+  .bar{height:8px;background:#0d1119;border-radius:6px;overflow:hidden;margin:10px 0 14px}
+  .bar > i{display:block;height:100%;transition:width .5s}
+  .reasons{font-size:12.5px;color:var(--muted);line-height:1.7}
+  .reasons span{display:inline-block;background:#0d1320;border:1px solid var(--line);
+    border-radius:6px;padding:2px 8px;margin:3px 4px 0 0}
+  .reasons span.b{color:var(--up);border-color:#1c4a3a}
+  .reasons span.s{color:var(--down);border-color:#4a2026}
+  .acc{margin-top:14px;font-size:12.5px;color:var(--muted);display:flex;justify-content:space-between;
+    border-top:1px solid var(--line);padding-top:12px}
+  .acc b{color:var(--txt)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  .histwrap{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:var(--shadow)}
+  .histwrap h3{margin:0 0 12px;font-size:15px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+  th{color:var(--muted);font-weight:600}
+  td.up{color:var(--up)} td.down{color:var(--down)} td.win{color:var(--up)} td.loss{color:var(--down)} td.pend{color:var(--muted)}
+  .controls{display:flex;gap:10px;flex-wrap:wrap}
+  button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:10px;
+    padding:9px 14px;font-size:13px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  .status{font-size:12px;color:var(--muted)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--up);margin-right:6px;vertical-align:middle}
+  .disclaimer{font-size:11.5px;color:#6b7689;margin-top:22px;line-height:1.6;max-width:900px}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h1>5-Min Candle Signal Bot</h1>
+      <div class="sub"><span class="dot"></span><span id="status">Starting…</span></div>
+    </div>
+    <div class="clock">
+      Next candle in <b id="countdown">--:--</b> &nbsp;·&nbsp; <span id="utc">--:--:-- UTC</span>
+    </div>
+  </div>
+
+  <div class="controls" style="margin-bottom:18px">
+    <button id="refreshBtn">↻ Refresh now</button>
+    <button id="notifyBtn">🔔 Enable notifications</button>
+    <button id="soundBtn">🔊 Sound: ON</button>
+    <button id="resetBtn">🗑 Reset stats</button>
+    <button id="backtestBtn">🧪 Backtest last ~3 days</button>
+  </div>
+
+  <div id="btResult" class="histwrap" style="display:none;margin-bottom:22px">
+    <h3>Backtest results <span class="status" id="btStatus"></span></h3>
+    <table>
+      <thead><tr><th>Pair</th><th>Predictions</th><th>Overall</th><th>≥55% conf</th><th>≥65% conf</th><th>Always-UP baseline</th></tr></thead>
+      <tbody id="btBody"></tbody>
+    </table>
+    <div class="status" style="margin-top:8px">Walk-forward, no look-ahead. Beat the baseline to add value. ~50–55% is the honest range for 5m direction.</div>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="histwrap">
+    <h3>Signal log &amp; outcomes (last 40)</h3>
+    <table>
+      <thead><tr><th>Time (local)</th><th>Pair</th><th>Signal</th><th>Conf.</th><th>Open</th><th>Close</th><th>Result</th></tr></thead>
+      <tbody id="hist"></tbody>
+    </table>
+  </div>
+
+  <div class="disclaimer">
+    <b>Reality check:</b> next-candle direction on a 5-minute timeframe is overwhelmingly noise. This bot aggregates
+    EMA trend, MACD, RSI, momentum (ROC), Stochastic and volume into a weighted vote — a disciplined heuristic, not a
+    crystal ball. Expect a real hit-rate around 50–55%. The accuracy counters below are self-measured on live data so
+    you can see the truth for yourself. <b>Educational tool — not financial advice. Do not trade real money on this alone.</b>
+    Data: Binance public market endpoint (data-api.binance.vision). Everything runs locally in your browser.
+  </div>
+
+<script>
+/* ===================== Config ===================== */
+const SYMBOLS = ["BTCUSDT", "ETHUSDT"];
+const INTERVAL = "5m";
+const INTERVAL_MS = 5 * 60 * 1000;
+const LIMIT = 200;
+const BASES = [
+  "https://data-api.binance.vision",
+  "https://api.binance.com",
+  "https://api1.binance.com",
+  "https://api4.binance.com"
+];
+let soundOn = true;
+
+/* ===================== Storage ===================== */
+const LS_PRED = "scb_predictions_v1";
+const LS_STATS = "scb_stats_v1";
+const loadJSON = (k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch{return d}};
+const saveJSON = (k,v)=>localStorage.setItem(k,JSON.stringify(v));
+let predictions = loadJSON(LS_PRED, {});   // { SYM: { openTime: {signal,conf,open} } }
+let stats = loadJSON(LS_STATS, {});        // { SYM: {correct,total} }
+SYMBOLS.forEach(s=>{predictions[s]=predictions[s]||{}; stats[s]=stats[s]||{correct:0,total:0};});
+
+/* ===================== Indicators ===================== */
+function ema(values, period){
+  const k = 2/(period+1);
+  let e = values[0], out=[e];
+  for(let i=1;i<values.length;i++){ e = values[i]*k + e*(1-k); out.push(e); }
+  return out;
+}
+function rsi(closes, period=14){
+  let gains=0, losses=0;
+  for(let i=1;i<=period;i++){ const d=closes[i]-closes[i-1]; if(d>=0)gains+=d; else losses-=d; }
+  let ag=gains/period, al=losses/period;
+  const out=new Array(period).fill(50);
+  for(let i=period+1;i<closes.length;i++){
+    const d=closes[i]-closes[i-1];
+    ag=(ag*(period-1)+(d>0?d:0))/period;
+    al=(al*(period-1)+(d<0?-d:0))/period;
+    out.push(al===0?100:100-100/(1+ag/al));
+  }
+  return out;
+}
+function macd(closes,f=12,s=26,sig=9){
+  const ef=ema(closes,f), es=ema(closes,s);
+  const line=closes.map((_,i)=>ef[i]-es[i]);
+  const signal=ema(line,sig);
+  const hist=line.map((v,i)=>v-signal[i]);
+  return {line,signal,hist};
+}
+function stochastic(highs,lows,closes,period=14){
+  const out=[];
+  for(let i=0;i<closes.length;i++){
+    if(i<period-1){out.push(50);continue;}
+    let hh=-Infinity,ll=Infinity;
+    for(let j=i-period+1;j<=i;j++){hh=Math.max(hh,highs[j]);ll=Math.min(ll,lows[j]);}
+    out.push(hh===ll?50:100*(closes[i]-ll)/(hh-ll));
+  }
+  return out;
+}
+function roc(closes,n=5){
+  const out=new Array(closes.length).fill(0);
+  for(let i=n;i<closes.length;i++) out[i]=100*(closes[i]-closes[i-n])/closes[i-n];
+  return out;
+}
+const sma=(a,n,end)=>{let s=0;for(let i=end-n+1;i<=end;i++)s+=a[i];return s/n;};
+
+/* ===================== Signal engine ===================== */
+/* Each indicator casts a weighted vote in [-1,+1]. Final = weighted mean. */
+function buildSignal(k){
+  // k: array of closed candles {o,h,l,c,v}. Predict the NEXT (forming) candle.
+  const closes=k.map(x=>x.c), highs=k.map(x=>x.h), lows=k.map(x=>x.l), vols=k.map(x=>x.v);
+  const n=closes.length, last=n-1;
+  const ema9=ema(closes,9), ema21=ema(closes,21);
+  const r=rsi(closes,14), m=macd(closes), st=stochastic(highs,lows,closes,14), rc=roc(closes,5);
+
+  const votes=[];
+  const add=(label,val,weight)=>votes.push({label,val:Math.max(-1,Math.min(1,val)),weight});
+
+  // 1) EMA trend (fast vs slow) + slope — weight 1.4
+  const trend=(ema9[last]-ema21[last])/closes[last]*1000;       // scaled
+  const slope=(ema9[last]-ema9[last-1])/closes[last]*2000;
+  add("EMA9/21 trend", Math.tanh(trend), 1.2);
+  add("EMA9 slope", Math.tanh(slope), 0.8);
+
+  // 2) MACD histogram value + momentum — weight 1.3
+  const histNow=m.hist[last], histPrev=m.hist[last-1];
+  add("MACD hist", Math.tanh(histNow/closes[last]*1500), 0.8);
+  add("MACD momentum", Math.sign(histNow-histPrev)*Math.min(1,Math.abs(histNow-histPrev)/closes[last]*3000), 0.7);
+
+  // 3) RSI — oversold bounce / overbought fade, else slope — weight 0.9
+  const rsiNow=r[r.length-1], rsiPrev=r[r.length-2];
+  let rsiVote;
+  if(rsiNow<32) rsiVote=0.7;            // oversold -> bullish bounce bias
+  else if(rsiNow>68) rsiVote=-0.7;      // overbought -> bearish fade
+  else rsiVote=Math.tanh((rsiNow-rsiPrev)/8) + (rsiNow-50)/100;
+  add("RSI("+rsiNow.toFixed(0)+")", rsiVote, 0.9);
+
+  // 4) Stochastic — weight 0.6
+  const stNow=st[last];
+  let stVote = stNow<20?0.6 : stNow>80?-0.6 : (stNow-50)/60;
+  add("Stoch", stVote, 0.6);
+
+  // 5) ROC momentum — weight 0.8
+  add("ROC", Math.tanh(rc[last]/0.8), 0.8);
+
+  // 6) Volume-weighted last candle body — weight 0.7
+  const body=(closes[last]-k[last].o)/closes[last];
+  const volRatio=vols[last]/sma(vols,20,last);
+  add("Vol/Body", Math.tanh(body*4000)*Math.min(1.3,volRatio)/1.3, 0.7);
+
+  // 7) Higher-highs / lower-lows of last 3 closes — weight 0.5
+  const micro=Math.sign((closes[last]-closes[last-1])+(closes[last-1]-closes[last-2])*0.6);
+  add("Micro-structure", micro*0.8, 0.5);
+
+  let sw=0, tw=0;
+  votes.forEach(v=>{sw+=v.val*v.weight; tw+=v.weight;});
+  const score=sw/tw;                                  // [-1,1]
+  const dir = score>0.03 ? "UP" : score<-0.03 ? "DOWN" : "NEUTRAL";
+  // confidence: map |score| to 50–92%
+  const conf = Math.round(50 + Math.min(0.92, Math.abs(score)) * 46);
+  return {dir, conf:Math.min(92,conf), score, votes,
+          price:closes[last], rsi:rsiNow};
+}
+
+/* ===================== Data fetch ===================== */
+async function fetchKlines(sym){
+  let lastErr;
+  for(const base of BASES){
+    try{
+      const url=`${base}/api/v3/klines?symbol=${sym}&interval=${INTERVAL}&limit=${LIMIT}`;
+      const res=await fetch(url,{cache:"no-store"});
+      if(!res.ok) throw new Error(res.status);
+      const raw=await res.json();
+      return raw.map(c=>({
+        openTime:c[0], o:+c[1], h:+c[2], l:+c[3], c:+c[4], v:+c[5], closeTime:c[6]
+      }));
+    }catch(e){ lastErr=e; }
+  }
+  throw lastErr;
+}
+
+/* ===================== Render ===================== */
+const fmt=p=>p>=1000?p.toLocaleString(undefined,{maximumFractionDigits:1}):p.toLocaleString(undefined,{maximumFractionDigits:2});
+const cardsEl=document.getElementById("cards");
+const histEl=document.getElementById("hist");
+let cardNodes={};
+
+function ensureCards(){
+  SYMBOLS.forEach(sym=>{
+    if(cardNodes[sym])return;
+    const d=document.createElement("div");
+    d.className="card";
+    d.innerHTML=`
+      <div class="sym"><h2>${sym.replace("USDT","/USDT")}</h2><div class="price" id="px-${sym}">—</div></div>
+      <div class="signal"><div class="dir wait" id="dir-${sym}">WAIT</div><div class="conf" id="cf-${sym}"></div></div>
+      <div class="bar"><i id="bar-${sym}" style="width:0%;background:var(--muted)"></i></div>
+      <div class="reasons" id="rs-${sym}"></div>
+      <div class="acc"><span>Predicting candle: <b id="ct-${sym}">—</b></span>
+        <span>Live accuracy: <b id="ac-${sym}">— / —</b></span></div>`;
+    cardsEl.appendChild(d);
+    cardNodes[sym]=true;
+  });
+}
+function renderCard(sym,sig,formingOpenTime){
+  document.getElementById("px-"+sym).textContent="$"+fmt(sig.price);
+  const dir=document.getElementById("dir-"+sym);
+  dir.textContent=sig.dir==="NEUTRAL"?"NEUTRAL":sig.dir;
+  dir.className="dir "+(sig.dir==="UP"?"up":sig.dir==="DOWN"?"down":"wait");
+  document.getElementById("cf-"+sym).textContent=sig.dir==="NEUTRAL"?"no edge":sig.conf+"% confidence";
+  const bar=document.getElementById("bar-"+sym);
+  bar.style.width=Math.abs(sig.score)*100+"%";
+  bar.style.background=sig.dir==="UP"?"var(--up)":sig.dir==="DOWN"?"var(--down)":"var(--muted)";
+  const rs=document.getElementById("rs-"+sym);
+  rs.innerHTML=sig.votes.slice().sort((a,b)=>Math.abs(b.val*b.weight)-Math.abs(a.val*a.weight))
+    .map(v=>`<span class="${v.val>0.05?'b':v.val<-0.05?'s':''}">${v.label} ${v.val>0?'▲':v.val<0?'▼':'·'}</span>`).join("");
+  document.getElementById("ct-"+sym).textContent=new Date(formingOpenTime).toLocaleTimeString();
+  const s=stats[sym];
+  document.getElementById("ac-"+sym).textContent=
+    s.total?`${s.correct}/${s.total} (${Math.round(100*s.correct/s.total)}%)`:"0 / 0";
+}
+
+function renderHistory(){
+  const rows=[];
+  SYMBOLS.forEach(sym=>{
+    Object.entries(predictions[sym]).forEach(([ot,p])=>{
+      rows.push({sym,ot:+ot,...p});
+    });
+  });
+  rows.sort((a,b)=>b.ot-a.ot);
+  histEl.innerHTML=rows.slice(0,40).map(p=>{
+    const res = p.result==null?`<td class="pend">pending…</td>`
+      : p.result?`<td class="win">✓ correct</td>`:`<td class="loss">✗ wrong</td>`;
+    const closeCell = p.close!=null?`$${fmt(p.close)}`:"—";
+    return `<tr>
+      <td>${new Date(p.ot).toLocaleTimeString()}</td>
+      <td>${p.sym.replace("USDT","")}</td>
+      <td class="${p.signal==='UP'?'up':p.signal==='DOWN'?'down':''}">${p.signal}</td>
+      <td>${p.signal==='NEUTRAL'?'—':p.conf+'%'}</td>
+      <td>$${fmt(p.open)}</td>
+      <td>${closeCell}</td>
+      ${res}</tr>`;
+  }).join("");
+}
+
+/* ===================== Notifications & sound ===================== */
+function beep(up){
+  if(!soundOn)return;
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const o=ctx.createOscillator(),g=ctx.createGain();
+    o.connect(g);g.connect(ctx.destination);
+    o.frequency.value=up?660:440;o.type="sine";
+    g.gain.setValueAtTime(.15,ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.4);
+    o.start();o.stop(ctx.currentTime+.4);
+  }catch{}
+}
+function notify(sym,sig){
+  if(Notification?.permission==="granted" && sig.dir!=="NEUTRAL"){
+    new Notification(`${sym} → ${sig.dir} (${sig.conf}%)`,
+      {body:`New 5m candle. Price $${fmt(sig.price)} · RSI ${sig.rsi.toFixed(0)}`,silent:!soundOn});
+  }
+}
+
+/* ===================== Core cycle ===================== */
+let lastSignalOpenTime={};
+async function runCycle(announce){
+  setStatus("Fetching live data…");
+  try{
+    for(const sym of SYMBOLS){
+      const k=await fetchKlines(sym);
+      const forming=k[k.length-1];          // in-progress candle
+      const closed=k.slice(0,k.length-1);   // fully closed candles
+      const justClosed=closed[closed.length-1];
+
+      // 1) Evaluate any prior prediction whose candle just closed
+      const pmap=predictions[sym];
+      if(pmap[justClosed.openTime] && pmap[justClosed.openTime].result==null){
+        const p=pmap[justClosed.openTime];
+        const actualUp=justClosed.c>=justClosed.o;
+        p.close=justClosed.c;
+        if(p.signal!=="NEUTRAL"){
+          p.result=(p.signal==="UP")===actualUp;
+          stats[sym].total++; if(p.result)stats[sym].correct++;
+        }else{ p.result=null; p.close=justClosed.c; }
+      }
+
+      // 2) Build signal for the forming candle
+      const sig=buildSignal(closed);
+      renderCard(sym,sig,forming.openTime);
+
+      // 3) Log it once per candle
+      if(!pmap[forming.openTime] && sig.dir!=="NEUTRAL"){
+        pmap[forming.openTime]={signal:sig.dir,conf:sig.conf,open:forming.o,close:null,result:null};
+      } else if(!pmap[forming.openTime]){
+        pmap[forming.openTime]={signal:"NEUTRAL",conf:0,open:forming.o,close:null,result:null};
+      }
+
+      // 4) Announce on a genuinely new candle
+      if(announce && lastSignalOpenTime[sym]!==forming.openTime){
+        beep(sig.dir==="UP"); notify(sym,sig);
+      }
+      lastSignalOpenTime[sym]=forming.openTime;
+
+      // prune old predictions (keep ~120)
+      const keys=Object.keys(pmap).map(Number).sort((a,b)=>b-a);
+      keys.slice(120).forEach(kk=>delete pmap[kk]);
+    }
+    saveJSON(LS_PRED,predictions); saveJSON(LS_STATS,stats);
+    renderHistory();
+    setStatus("Live · last update "+new Date().toLocaleTimeString());
+  }catch(e){
+    setStatus("⚠ Data fetch failed ("+e.message+"). Retrying next cycle. If this persists, Binance may be blocked on your network/region.");
+  }
+}
+function setStatus(t){document.getElementById("status").textContent=t;}
+
+/* ===================== Scheduling ===================== */
+function msToNextCandle(){
+  const now=Date.now();
+  return INTERVAL_MS - (now % INTERVAL_MS);
+}
+function scheduleNext(){
+  const wait=msToNextCandle()+1500; // small buffer so the new candle exists on the API
+  setTimeout(async()=>{
+    await runCycle(true);
+    scheduleNext();
+  }, wait);
+}
+function tickClock(){
+  const ms=msToNextCandle();
+  const m=Math.floor(ms/60000), s=Math.floor((ms%60000)/1000);
+  document.getElementById("countdown").textContent=
+    String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
+  document.getElementById("utc").textContent=new Date().toUTCString().split(" ")[4]+" UTC";
+}
+
+/* ===================== Wire up ===================== */
+document.getElementById("refreshBtn").onclick=()=>runCycle(false);
+document.getElementById("notifyBtn").onclick=()=>Notification?.requestPermission();
+document.getElementById("soundBtn").onclick=e=>{soundOn=!soundOn;e.target.textContent="🔊 Sound: "+(soundOn?"ON":"OFF");};
+document.getElementById("resetBtn").onclick=()=>{
+  if(confirm("Clear all logged predictions and accuracy stats?")){
+    predictions={};stats={};SYMBOLS.forEach(s=>{predictions[s]={};stats[s]={correct:0,total:0};});
+    saveJSON(LS_PRED,predictions);saveJSON(LS_STATS,stats);renderHistory();
+    SYMBOLS.forEach(s=>document.getElementById("ac-"+s).textContent="0 / 0");
+  }
+};
+
+/* ===================== Backtest (in-browser) ===================== */
+async function fetchHistory(sym, total){
+  let out=[], endTime=null;
+  while(out.length<total){
+    const need=Math.min(1000,total-out.length);
+    let url=`${BASES[0]}/api/v3/klines?symbol=${sym}&interval=${INTERVAL}&limit=${need}`;
+    if(endTime) url+=`&endTime=${endTime}`;
+    const res=await fetch(url,{cache:"no-store"});
+    const raw=await res.json();
+    if(!raw.length) break;
+    const batch=raw.map(c=>({openTime:c[0],o:+c[1],h:+c[2],l:+c[3],c:+c[4],v:+c[5]}));
+    out=batch.concat(out);
+    endTime=batch[0].openTime-1;
+    if(batch.length<need) break;
+  }
+  return out;
+}
+async function runBacktest(){
+  const panel=document.getElementById("btResult");
+  const status=document.getElementById("btStatus");
+  const body=document.getElementById("btBody");
+  panel.style.display="block"; body.innerHTML="";
+  status.textContent="fetching history…";
+  const WARMUP=40, TOTAL=850;
+  try{
+    for(const sym of SYMBOLS){
+      const c=await fetchHistory(sym,TOTAL);
+      let tot=0,cor=0,c55=0,cc55=0,c65=0,cc65=0,ups=0;
+      for(let i=WARMUP;i<c.length;i++){
+        const sig=buildSignal(c.slice(0,i));
+        const actualUp=c[i].c>=c[i].o;
+        if(c[i].c>=c[i].o) ups++;
+        if(sig.dir==="NEUTRAL") continue;
+        tot++; const ok=(sig.dir==="UP")===actualUp; if(ok)cor++;
+        if(sig.conf>=55){c55++; if(ok)cc55++;}
+        if(sig.conf>=65){c65++; if(ok)cc65++;}
+      }
+      const tested=c.length-WARMUP;
+      const pct=(a,b)=>b?`${(100*a/b).toFixed(1)}%`:"—";
+      const base=100*ups/tested;
+      const overall=100*cor/Math.max(1,tot);
+      const beat=overall>base?'style="color:var(--up)"':'style="color:var(--down)"';
+      body.innerHTML+=`<tr>
+        <td>${sym.replace("USDT","")}</td>
+        <td>${tot} <span class="status">/ ${tested} candles</span></td>
+        <td ${beat}>${pct(cor,tot)}</td>
+        <td>${pct(cc55,c55)}</td>
+        <td>${pct(cc65,c65)}</td>
+        <td>${base.toFixed(1)}%</td></tr>`;
+    }
+    status.textContent="done · "+new Date().toLocaleTimeString();
+  }catch(e){ status.textContent="failed: "+e.message; }
+}
+document.getElementById("backtestBtn").onclick=runBacktest;
+
+ensureCards();
+renderHistory();
+tickClock(); setInterval(tickClock,1000);
+runCycle(false).then(scheduleNext);
+</script>
+</body>
+</html>
